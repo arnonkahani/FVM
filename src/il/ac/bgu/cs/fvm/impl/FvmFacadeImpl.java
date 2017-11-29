@@ -125,6 +125,8 @@ public class FvmFacadeImpl implements FvmFacade {
 
     @Override
     public <S> Set<S> post(TransitionSystem<S, ?, ?> ts, S s) {
+    		if(!ts.getStates().contains(s))
+			throw new StateNotFoundException(s);
     		Set<S> ans = new HashSet<S>();
         for(Transition t : ts.getTransitions())
         		if(t.getFrom().equals(s))
@@ -152,6 +154,8 @@ public class FvmFacadeImpl implements FvmFacade {
 
     @Override
     public <S, A> Set<S> post(TransitionSystem<S, A, ?> ts, Set<S> c, A a) {
+    		if(!ts.getActions().contains(a))
+			throw new ActionNotFoundException(a);
     		Set<S> ans = new HashSet<S>();    
 		for(S s: c)
 			ans.addAll(this.post(ts,s,a));
@@ -160,6 +164,8 @@ public class FvmFacadeImpl implements FvmFacade {
 
     @Override
     public <S> Set<S> pre(TransitionSystem<S, ?, ?> ts, S s) {
+    		if(!ts.getStates().contains(s))
+    			throw new StateNotFoundException(s);
         Set<S> ans = new HashSet<S>();
         for(Transition t : ts.getTransitions())
         		if(t.getTo().equals(s))
@@ -179,7 +185,9 @@ public class FvmFacadeImpl implements FvmFacade {
 
     @Override
     public <S, A> Set<S> pre(TransitionSystem<S, A, ?> ts, S s, A a) {
-    	Set<S> ans = new HashSet<S>();
+    		if(!ts.getActions().contains(a))
+    			throw new ActionNotFoundException(a);
+    		Set<S> ans = new HashSet<S>();
         for(Transition t : ts.getTransitions())
         		if(t.getTo().equals(s) && t.getAction().equals(a))
         			ans.add((S) t.getFrom());
