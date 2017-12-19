@@ -10,6 +10,7 @@ import il.ac.bgu.cs.fvm.ltl.LTL;
 import il.ac.bgu.cs.fvm.programgraph.ActionDef;
 import il.ac.bgu.cs.fvm.programgraph.ConditionDef;
 import il.ac.bgu.cs.fvm.programgraph.ProgramGraph;
+import il.ac.bgu.cs.fvm.programgraph.PGTransition;
 import il.ac.bgu.cs.fvm.transitionsystem.AlternatingSequence;
 import il.ac.bgu.cs.fvm.transitionsystem.Transition;
 import il.ac.bgu.cs.fvm.transitionsystem.TransitionSystem;
@@ -22,6 +23,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.Stack;
+
+import com.sun.prism.impl.shape.ShapeUtil;
 
 /**
  * Implement the methods in this class. You may add additional classes as you
@@ -218,24 +222,185 @@ public class FvmFacadeImpl implements FvmFacade {
     	return ans;
     }
 
+
+    private <S1,S2,A,P> Set<Transition<Pair<S1,S2>,A>> interleaveTransitions(Set<Pair<S1,S2>> states,Set<Pair<S1,S2>> initalStates,TransitionSystem<S1, A, P> ts1, TransitionSystem<S2, A, P> ts2, Set<A> handShakingActions){
+    	
+    	Set<Pair<S1,S2>> interlivedStates = new HashSet<Pair<S1,S2>>();
+    	Stack<Pair<S1,S2>> shouldTraverse = new Stack<Pair<S1,S2>>();
+    	Set<Transition<S1,A>> tr1 = ts1.getTransitions();
+    	Set<Transition<S2,A>> tr2 = ts2.getTransitions();
+    	Set<Transition<Pair<S1,S2>,A>> interlivedTransitions = new HashSet<Transition<Pair<S1,S2>,A>>();
+    	
+    	for(Pair<S1,S2> initState : initalStates)
+    		shouldTraverse.push(initState);
+    	
+    	while(!shouldTraverse.isEmpty()) {
+    		Pair<S1,S2> currentState = shouldTraverse.pop();
+    		interlivedStates.add(currentState);
+    		//S1
+    		for(Transition<S1,A> transition : tr1) {
+    			if(transition.getFrom().equals(currentState.getFirst())) {
+    				if (handShakingActions.contains(transition.getAction()))
+                    {
+                        for (Transition<S2, A> transition2 : tr2)
+                        {
+                            if (transition2.getAction().equals(transition.getAction()) 
+                            		&& transition2.getFrom().equals(currentState.getSecond()))
+                            {
+                            	 	Pair<S1, S2> to = new Pair<S1,S2>(transition.getTo(),transition2.getTo());
+                            	 	interlivedTransitions.add(new Transition<Pair<S1,S2>,A>(currentState, transition.getAction(), to));
+                            	 	if(!interlivedStates.contains(to)) {
+            							interlivedStates.add(to);
+            							shouldTraverse.push(to);
+            						}
+                                
+                            }
+                        }
+                    }else {
+                    	Pair<S1, S2> to = new Pair<S1,S2>(transition.getTo(), currentState.getSecond());
+    						if(!interlivedStates.contains(to)) {
+    							interlivedStates.add(to);
+    							shouldTraverse.push(to);
+    							
+    						}
+    						interlivedTransitions.add(new Transition<Pair<S1,S2>, A>(currentState, transition.getAction(), to));
+    			}
+    						
+    			}
+    		}
+    		//S2
+    		for(Transition<S2,A> transition : tr2) {
+    			if(transition.getFrom().equals(currentState.getSecond()) && !handShakingActions.contains(transition.getAction())) {
+    				Pair<S1, S2> to = new Pair<S1,S2>(currentState.getFirst(),transition.getTo());
+    						if(!interlivedStates.contains(to)) {
+    							interlivedStates.add(to);
+    							shouldTraverse.push(to);
+    						}
+    						interlivedTransitions.add(new Transition<Pair<S1,S2>, A>(currentState, transition.getAction(), to));
+    			
+    			}
+    						
+    					
+    		}
+    	}
+    	
+    	states.addAll(interlivedStates);
+    return interlivedTransitions;
+    }
     @Override
     public <S1, S2, A, P> TransitionSystem<Pair<S1, S2>, A, P> interleave(TransitionSystem<S1, A, P> ts1, TransitionSystem<S2, A, P> ts2) {
-        throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement interleave
+    	TransitionSystemImpl<Pair<S1, S2>, A, P> ans = new TransitionSystemImpl<Pair<S1, S2>, A, P>();
+    	ans.addAllActions(ts1.getActions());
+    	ans.addAllActions(ts2.getActions());
+    	for(S1 s1 : ts1.getInitialStates())
+    		for(S2 s2 : ts2.getInitialStates()) {
+    			ans.addState(new Pair<S1,S2>(s1,s2));
+    			ans.addInitialState(new Pair<S1,S2>(s1,s2));
+    		}
+    	
+    	ans.addAllAtomicPropositions(ts1.getAtomicPropositions());
+    	ans.addAllAtomicPropositions(ts2.getAtomicPropositions());
+    	
+    	Set<Pair<S1,S2>> statesToBeAdded = new HashSet<Pair<S1,S2>>();
+    	Set<Transition<Pair<S1,S2>,A>> interleavedTransitions = interleaveTransitions(statesToBeAdded,ans.getInitialStates(), ts1, ts2, new HashSet<A>());
+    	for(Pair<S1,S2> s : statesToBeAdded)
+    		ans.addState(s);
+    	for(Transition<Pair<S1,S2>,A> t : interleavedTransitions)
+    		ans.addTransition(t);
+    	for(Pair<S1,S2> statePair : ans.getStates()) {
+    		Set<P> firstLabels = ts1.getLabel(statePair.first);
+    		for(P firstLabel : firstLabels) {
+    			ans.addToLabel(statePair, firstLabel);
+    		}
+    		Set<P> secondLabels = ts2.getLabel(statePair.second);
+    		for(P secondLabel : secondLabels) {
+    			ans.addToLabel(statePair, secondLabel);
+    		}
+    	}
+    	
+    	
+    	
+    			
+    	return ans;
     }
 
     @Override
     public <S1, S2, A, P> TransitionSystem<Pair<S1, S2>, A, P> interleave(TransitionSystem<S1, A, P> ts1, TransitionSystem<S2, A, P> ts2, Set<A> handShakingActions) {
-        throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement interleave
+    	TransitionSystem<Pair<S1, S2>, A, P> ts = interleave(ts1, ts2);
+    	ts.getStates().clear();
+    	Set<Pair<S1,S2>> statesToBeAdded = new HashSet<Pair<S1,S2>>();
+    	Set<Transition<Pair<S1,S2>,A>> interleavedTransitions = interleaveTransitions(statesToBeAdded,ts.getInitialStates(), ts1, ts2, handShakingActions);
+    	ts.getTransitions().clear();
+    	for(Pair<S1,S2> s : statesToBeAdded)
+    		ts.addState(s);
+    	for(Transition<Pair<S1,S2>,A> t : interleavedTransitions)
+    		ts.addTransition(t);
+    	
+    	return ts;
     }
 
     @Override
     public <L, A> ProgramGraph<L, A> createProgramGraph() {
-        throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement createProgramGraph
+    		return new ProgramGraphImpl<L, A>();
     }
 
     @Override
     public <L1, L2, A> ProgramGraph<Pair<L1, L2>, A> interleave(ProgramGraph<L1, A> pg1, ProgramGraph<L2, A> pg2) {
-        throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement interleave
+    		ProgramGraph<Pair<L1, L2>, A> pg = createProgramGraph();
+
+        for (L1 loc1 : pg1.getLocations())
+            for (L2 loc2 : pg2.getLocations())
+            {
+                Pair<L1, L2> location = new Pair<L1,L2>(loc1, loc2);
+                pg.addLocation(location);
+            }
+
+        for (L1 initLoc1 : pg1.getInitialLocations())
+            for (L2 initLoc2 : pg2.getInitialLocations())
+            {
+                Pair<L1, L2> location = new Pair<L1,L2>(initLoc1, initLoc2);
+                pg.addInitialLocation(location);
+            }
+
+        for (List<String> initalization1 : pg1.getInitalizations())
+            for (List<String> initalization2 : pg2.getInitalizations())
+            {
+                List<String> initalization = new ArrayList<>();
+                initalization.addAll(initalization1);
+                initalization.addAll(initalization2);
+                pg.addInitalization(initalization);
+            }
+
+
+        Set<Pair<L1, L2>> locations = pg.getLocations();
+
+        //add transitions
+        for (PGTransition<L1, A> t1 : pg1.getTransitions())
+            for (Pair<L1, L2> from : locations)
+                if (from.getFirst().equals(t1.getFrom()))
+                {
+                		Pair<L1, L2> to = null;
+                		for (Pair<L1, L2> location : locations)
+                        if (location.first.equals(t1.getTo()) && location.second.equals(from.second))
+                        		to = location;
+                    PGTransition<Pair<L1, L2>, A> transition = new PGTransition<Pair<L1, L2>, A>(from, t1.getCondition(), t1.getAction(), to);
+                    pg.addTransition(transition);
+                }
+
+        for (PGTransition<L2, A> t2 : pg2.getTransitions())
+            for (Pair<L1, L2> from : locations)
+                if (from.second.equals(t2.getFrom()))
+                {
+                    Pair<L1, L2> to = null;
+                    for (Pair<L1, L2> location : locations)
+                        if (location.second.equals(t2.getTo()) && location.first.equals(from.first))
+                        		to = location;
+                    PGTransition<Pair<L1, L2>, A> transition = new PGTransition<Pair<L1, L2>, A>(from, t2.getCondition(), t2.getAction(), to);
+                    pg.addTransition(transition);
+                }
+
+
+        return pg;
     }
 
     @Override
@@ -245,7 +410,69 @@ public class FvmFacadeImpl implements FvmFacade {
 
     @Override
     public <L, A> TransitionSystem<Pair<L, Map<String, Object>>, A, String> transitionSystemFromProgramGraph(ProgramGraph<L, A> pg, Set<ActionDef> actionDefs, Set<ConditionDef> conditionDefs) {
-        throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement transitionSystemFromProgramGraph
+    	TransitionSystem<Pair<L, Map<String, Object>>, A, String> ret = createTransitionSystem();
+        Set<PGTransition<L, A>> transitions = pg.getTransitions();
+        Set<List<String>> initializations = pg.getInitalizations();
+
+        Set<L> initialLocations = pg.getInitialLocations();
+        Stack<Pair<L, Map<String, Object>>> reach = new Stack<>();
+
+        for (L initLoc : initialLocations)
+		{
+			boolean flag = true;
+			for (List<String> conditions : initializations)
+			{
+				flag = false;
+				Map<String, Object> initial_eval = new HashMap<>();
+				for (String cond : conditions)
+				{
+					initial_eval = ActionDef.effect(actionDefs, initial_eval, cond);
+
+				}
+				Pair<L, Map<String, Object>> state = new Pair<L, Map<String, Object>>(initLoc, initial_eval);
+				ret.addState(state);
+				ret.addInitialState(state);
+				reach.add(state);
+
+				labelState(ret, state);
+			}
+
+			if(flag)
+			{
+				Map<String, Object> initial_eval = new HashMap<>();
+				Pair<L, Map<String, Object>> state = new Pair<L, Map<String, Object>>(initLoc, initial_eval);
+				ret.addState(state);
+				ret.addInitialState(state);
+				reach.add(state);
+				labelState(ret, state);
+			}
+
+		}
+
+        while (!reach.isEmpty())
+        {
+            Pair<L, Map<String, Object>> from = reach.poll();
+            for (PGTransition<L, A> transition : transitions)
+            {
+                if (transition.getFrom().equals(from.first) && ConditionDef.evaluate(conditionDefs, from.second, transition.getCondition()))
+                {
+                    //  ret.addAtomicProposition(transition.getCondition());
+                    ret.addAction(transition.getAction());
+                    Pair<L, Map<String, Object>> to = new Pair<L, Map<String, Object>>(transition.getTo(), ActionDef.effect(actionDefs, from.second, transition.getAction()));
+                    if (!ret.getStates().contains(to))
+                    {
+                        ret.addState(to);
+                        reach.add(to);
+                    }
+                    ret.addTransition(new Transition<Pair<L, Map<String, Object>>, A>(from, transition.getAction(), to));
+
+                    labelState(ret, to);
+                }
+            }
+        }
+
+
+        return ret;
     }
 
     @Override
@@ -262,7 +489,7 @@ public class FvmFacadeImpl implements FvmFacade {
     public ProgramGraph<String, String> programGraphFromNanoPromela(String filename) throws Exception {
         throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement programGraphFromNanoPromela
     }
-
+//
     @Override
     public ProgramGraph<String, String> programGraphFromNanoPromelaString(String nanopromela) throws Exception {
         throw new UnsupportedOperationException("Not supported yet."); // TODO: Implement programGraphFromNanoPromelaString
